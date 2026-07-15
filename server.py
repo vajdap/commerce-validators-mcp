@@ -19,6 +19,7 @@ Depends only on the `mcp` SDK.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -27,7 +28,7 @@ import urllib.request
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("commerce-validators", host="0.0.0.0",
+mcp = FastMCP("commerce-validators", host=os.environ.get("MCP_HOST", "127.0.0.1"),
               port=int(os.environ.get("MCP_PORT", "8790")))
 
 UA = {"User-Agent": "commerce-validators-mcp/1.0 (+https://github.com/vajdap/commerce-validators-mcp)"}
@@ -51,7 +52,8 @@ def _valid_key(k: str | None) -> bool:
     try:
         data = json.load(open(KEYSTORE))
         keys = data if isinstance(data, list) else data.get("keys", [])
-        return k in keys
+        import hmac
+        return any(hmac.compare_digest(k, x) for x in keys if isinstance(x, str))
     except Exception:
         return False
 
@@ -74,17 +76,13 @@ def _pro_gate():
 
 # ---- free-substitute-RESISTANT tools: real lookups / fiddly validators an LLM can't fake ----
 
-@mcp.tool()
-def validate_eu_vat(vat_number: str) -> dict:
+def _validate_eu_vat_blocking(vat_number: str) -> dict:
     """Validate an EU VAT number against the official EU VIES service (live government
     lookup). Returns whether it is registered/valid and, if available, the registered
     trader name + address. An LLM cannot know this without the real lookup — use this
     before invoicing/reverse-charging an EU B2B customer. Input e.g. 'DE811569869' or
     'IE6388047V' (country code + number).
     """
-    gate = _pro_gate()
-    if gate:
-        return gate
     v = re.sub(r"[\s\-\.]", "", vat_number or "").upper()
     m = re.match(r"^([A-Z]{2})([A-Z0-9]{2,12})$", v)
     if not m:
@@ -159,14 +157,10 @@ def validate_aba_routing(routing_number: str) -> dict:
             "reason": "checksum ok" if chk == 0 else "ABA checksum failed"}
 
 
-@mcp.tool()
-def check_email_domain(email_or_domain: str) -> dict:
+def _check_email_domain_blocking(email_or_domain: str) -> dict:
     """Check whether a domain can actually receive email (has MX records) via a real
     DNS-over-HTTPS lookup — validate a customer/supplier email's domain before sending
     or invoicing. An LLM can't know current DNS; this does the live lookup."""
-    gate = _pro_gate()
-    if gate:
-        return gate
     x = (email_or_domain or "").strip().lower()
     domain = x.split("@")[-1]
     if not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", domain):
@@ -183,16 +177,12 @@ def check_email_domain(email_or_domain: str) -> dict:
                 "error": f"DNS lookup failed ({e})"}
 
 
-@mcp.tool()
-def validate_eori(eori: str) -> dict:
+def _validate_eori_blocking(eori: str) -> dict:
     """Validate an EORI number (Economic Operators Registration and Identification)
     against the official EU customs database (live lookup). An EORI is required for
     EU imports/exports — check a trading partner's or your own EORI before customs
     filings / freight bookings. Input e.g. 'DE1234567890123' (country code + number).
     """
-    gate = _pro_gate()
-    if gate:
-        return gate
     e = re.sub(r"[\s\-\.]", "", eori or "").upper()
     if not re.match(r"^[A-Z]{2}[A-Z0-9]{1,15}$", e):
         return {"input": eori, "valid": False, "error": "bad format — 2-letter country code + identifier"}
@@ -226,8 +216,7 @@ _VAT_RATES_CACHE: dict = {"at": 0.0, "data": None}
 VAT_RATES_URL = "https://raw.githubusercontent.com/ibericode/vat-rates/master/vat-rates.json"
 
 
-@mcp.tool()
-def vat_rate_by_country(country_code: str, date: str = "") -> dict:
+def _vat_rate_by_country_blocking(country_code: str, date: str = "") -> dict:
     """EU VAT rates (standard / reduced / super-reduced / parking) for a country,
     from the maintained ibericode/vat-rates dataset (fetched live, cached 24h) —
     including which rate set was in force on an optional 'date' (YYYY-MM-DD) and the
@@ -273,6 +262,58 @@ def vat_rate_by_country(country_code: str, date: str = "") -> dict:
     return out
 
 
+
+# Async shims: lookups run in a worker thread so one tenant's slow/timed-out external
+# call can't stall the event loop (and every other session) in hosted HTTP mode.
+
+@mcp.tool()
+async def validate_eu_vat(vat_number: str) -> dict:
+    """Validate an EU VAT number against the official EU VIES service (live government
+    lookup). Returns whether it is registered/valid and, if available, the registered
+    trader name + address. An LLM cannot know this without the real lookup — use this
+    before invoicing/reverse-charging an EU B2B customer. Input e.g. 'DE811569869' or
+    'IE6388047V' (country code + number).
+    """
+    gate = _pro_gate()
+    if gate:
+        return gate
+    return await asyncio.to_thread(_validate_eu_vat_blocking, vat_number)
+
+
+@mcp.tool()
+async def validate_eori(eori: str) -> dict:
+    """Validate an EORI number (Economic Operators Registration and Identification)
+    against the official EU customs database (live lookup). An EORI is required for
+    EU imports/exports — check a trading partner's or your own EORI before customs
+    filings / freight bookings. Input e.g. 'DE1234567890123' (country code + number).
+    """
+    gate = _pro_gate()
+    if gate:
+        return gate
+    return await asyncio.to_thread(_validate_eori_blocking, eori)
+
+
+@mcp.tool()
+async def check_email_domain(email_or_domain: str) -> dict:
+    """Check whether a domain can actually receive email (has MX records) via a real
+    DNS-over-HTTPS lookup — validate a customer/supplier email's domain before sending
+    or invoicing. An LLM can't know current DNS; this does the live lookup."""
+    gate = _pro_gate()
+    if gate:
+        return gate
+    return await asyncio.to_thread(_check_email_domain_blocking, email_or_domain)
+
+
+@mcp.tool()
+async def vat_rate_by_country(country_code: str, date: str = "") -> dict:
+    """EU VAT rates (standard / reduced / super-reduced / parking) for a country,
+    from the maintained ibericode/vat-rates dataset (fetched live, cached 24h) —
+    including which rate set was in force on an optional 'date' (YYYY-MM-DD) and the
+    names of regional exceptions (e.g. Canary Islands). Input e.g. 'DE', 'FR', 'HU'.
+    """
+    return await asyncio.to_thread(_vat_rate_by_country_blocking, country_code, date)
+
+
 @mcp.tool()
 def stripe_connect_split(charge_amount: float, application_fee_pct: float = 0.0,
                          application_fee_fixed: float = 0.0,
@@ -287,6 +328,9 @@ def stripe_connect_split(charge_amount: float, application_fee_pct: float = 0.0,
     """
     if fee_bearer not in ("seller", "platform", "buyer"):
         return {"error": f"fee_bearer must be 'seller', 'platform' or 'buyer' (got {fee_bearer!r})"}
+    if not (0 <= processing_pct < 100) or processing_fixed < 0 or \
+            application_fee_pct < 0 or application_fee_fixed < 0:
+        return {"error": "fees must be non-negative and processing_pct < 100"}
     c = max(0.0, charge_amount)
     stripe_fee = round(c * processing_pct / 100 + processing_fixed, 2)
     app_fee = round(c * application_fee_pct / 100 + application_fee_fixed, 2)
@@ -362,6 +406,7 @@ if __name__ == "__main__":
                 _current_key.set(key)
             await inner(scope, receive, send)
 
-        uvicorn.run(key_mw, host="0.0.0.0", port=int(os.environ.get("MCP_PORT", "8790")))
+        uvicorn.run(key_mw, host=os.environ.get("MCP_HOST", "127.0.0.1"),
+                    port=int(os.environ.get("MCP_PORT", "8790")))
     else:
         mcp.run()
