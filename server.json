@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "org.scienceswarm/commerce-validators",
+  "description": "Commerce/fintech validators for agents: live EU VAT (VIES), EORI and email/MX lookups, IBAN/ABA/GTIN checksums, VAT rates, Stripe Connect split math.",
+  "repository": {
+    "url": "https://github.com/vajdap/commerce-validators-mcp",
+    "source": "github"
+  },
+  "version": "1.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.scienceswarm.org/mcp"
+    }
+  ]
+}
