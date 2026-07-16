@@ -69,9 +69,13 @@ def _pro_gate():
     if _valid_key(_current_key.get()):
         return None
     return {"pro_required": True,
-            "message": "This tool performs a live external lookup and needs a Pro key.",
+            "message": "This tool performs a live external lookup and needs a Pro key "
+                       "($19 one-time, no subscription).",
             "get_a_key": PRO_URL,
-            "then": "set your MCP server URL to https://mcp.scienceswarm.org/mcp?key=YOUR_KEY"}
+            "buy_now": PRO_URL + "/checkout",
+            "then": "set your MCP server URL to https://mcp.scienceswarm.org/mcp?key=YOUR_KEY",
+            "free_alternative": "the checksum/math tools (IBAN, ABA, GTIN, VAT rates, "
+                                "Stripe split, payout reconciliation, reorder point) need no key"}
 
 
 # ---- free-substitute-RESISTANT tools: real lookups / fiddly validators an LLM can't fake ----
