@@ -15,7 +15,7 @@ Transport: Streamable HTTP. 10 tools are discovered dynamically via `tools/list`
 
 The 7 free tools (IBAN / ABA / GTIN checksums, EU VAT rates, Stripe Connect split,
 payout reconciliation, reorder point) work immediately. The 3 live-registry tools
-(EU VAT via VIES, EORI via EU customs, email/MX) need a one-time $19 Pro key from
+(EU VAT via VIES, EORI via EU customs, email/MX) need a one-time $9 Pro key (launch pricing) from
 <https://ops.scienceswarm.org/mcp>; then use:
 
 ```json

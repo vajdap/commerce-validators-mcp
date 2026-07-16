@@ -16,7 +16,7 @@ https://mcp.scienceswarm.org/mcp
 ```
 
 On the hosted endpoint the three **live-registry tools** (EU VAT, EORI, email/MX) need a
-Pro key — **$19 one-time** at <https://ops.scienceswarm.org/mcp>, then connect with
+Pro key — **$9 one-time (launch pricing; list $19)** at <https://ops.scienceswarm.org/mcp>, then connect with
 `https://mcp.scienceswarm.org/mcp?key=YOUR_KEY`. Everything else is free, no key, no
 account.
 
@@ -42,6 +42,23 @@ All tools return structured JSON. Registry lookups (VIES / EOS / DNS) are live �
 transient upstream outages are reported gracefully, retry later. Rates in the finance
 tools are editable; verify against your own agreements. No secrets or customer data are
 stored.
+
+## Plain REST API (same tools, same key)
+
+Not using MCP? Every validator is also a plain `GET` endpoint:
+
+```
+https://mcp.scienceswarm.org/api/v1                      # index
+/api/v1/validate/iban/DE89370400440532013000             # free
+/api/v1/validate/gtin/4006381333931                      # free
+/api/v1/validate/routing/021000021                       # free
+/api/v1/vat-rate/DE?date=2026-07-01                      # free
+/api/v1/validate/vat/IE6388047V?key=YOUR_KEY             # Pro (live VIES)
+/api/v1/validate/eori/DE1234567890?key=YOUR_KEY          # Pro (live EU customs)
+/api/v1/validate/email/example.com?key=YOUR_KEY          # Pro (live DNS/MX)
+```
+
+Comparable VAT-validation APIs start at $15/month; the Pro key here is one-time.
 
 ## Self-host
 
